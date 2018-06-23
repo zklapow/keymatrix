@@ -7,8 +7,11 @@ extern crate generic_array;
 use core::marker::PhantomData;
 use generic_array::{ArrayLength, GenericArray};
 use generic_array::sequence::GenericSequence;
+use generic_array::functional::FunctionalSequence;
 use generic_array::typenum::Unsigned;
 use hal::timer::{CountDown, Periodic};
+
+use core::default::Default;
 
 pub trait KeyColumns<N: Unsigned> {
     fn size(&self) -> N;
@@ -21,17 +24,20 @@ pub trait KeyRows<N: Unsigned> {
     fn read_row(&mut self, col: usize) -> bool;
 }
 
-pub struct KeyMatrix<CN: Unsigned, RN: Unsigned, C: KeyColumns<CN>, R: KeyRows<RN>> {
+pub struct KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool> + ArrayLength<u8>,
+                                         CN: Unsigned + ArrayLength<GenericArray<bool, RN>> + ArrayLength<GenericArray<u8, RN>>,
+                                         C: KeyColumns<CN>,
+                                         R: KeyRows<RN> {
     cols: C,
     rows: R,
+    debounce: GenericArray<GenericArray<u8, RN>, CN>,
 
     _cn: PhantomData<CN>,
     _cr: PhantomData<RN>,
-    //counter: C,
 }
 
-impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where CN: Unsigned + ArrayLength<bool>,
-                                                 RN: Unsigned + ArrayLength<bool>,
+impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool> + ArrayLength<u8>,
+                                                 CN: Unsigned + ArrayLength<GenericArray<bool, RN>> + ArrayLength<GenericArray<u8, RN>>,
                                                  C: KeyColumns<CN>,
                                                  R: KeyRows<RN>,
 {
@@ -48,24 +54,52 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where CN: Unsigned + ArrayLength<bool
         KeyMatrix {
             cols,
             rows,
+            debounce: KeyMatrix::<CN, RN, C, R>::init_state(),
             _cn: PhantomData,
             _cr: PhantomData,
             //counter
         }
     }
 
+    fn init_state() -> GenericArray<GenericArray<u8, RN>, CN> {
+        return GenericArray::generate(|_i| GenericArray::generate(|_j| Default::default()));
+    }
+
+    fn init_output_state() -> GenericArray<GenericArray<bool, RN>, CN> {
+        return GenericArray::generate(|_i| GenericArray::generate(|_j| Default::default()));
+    }
+
     pub fn poll(&mut self) {
-        for i in <CN as Unsigned>::to_usize().. {
+        for i in 0..<CN as Unsigned>::to_usize() {
             self.cols.enable_column(i);
 
-            let mut row_state: GenericArray<bool, RN> = GenericArray::generate(|_i| false);
-            //let row_builder = ArrayBuilder::new();
-            for j in <RN as Unsigned>::to_usize().. {
-                row_state[j] = self.rows.read_row(j);
+            for j in 0..<RN as Unsigned>::to_usize() {
+                match self.rows.read_row(j) {
+                    true => {
+                        let cur: u8 = self.debounce[i][j];
+                        // Saturating add to prevent overflow
+                        self.debounce[i][j] = cur.saturating_add(1);
+                    },
+                    false => {
+                        self.debounce[i][j] = 0;
+                    }
+                }
             }
 
             self.cols.disable_column(i);
         }
+    }
+
+    pub fn current_state(&self) -> GenericArray<GenericArray<bool, RN>, CN> {
+        self.debounce.clone().map(|col| col.map(|elem| elem > 5))
+    }
+
+    pub fn row_size(&self) -> usize {
+        <RN as Unsigned>::to_usize()
+    }
+
+    pub fn col_size(&self) -> usize {
+        <CN as Unsigned>::to_usize()
     }
 }
 
