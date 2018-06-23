@@ -11,8 +11,6 @@ use generic_array::functional::FunctionalSequence;
 use generic_array::typenum::Unsigned;
 use hal::timer::{CountDown, Periodic};
 
-use core::default::Default;
-
 pub trait KeyColumns<N: Unsigned> {
     fn size(&self) -> N;
     fn enable_column(&mut self, col: usize);
@@ -30,7 +28,8 @@ pub struct KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool> + Arra
                                          R: KeyRows<RN> {
     cols: C,
     rows: R,
-    debounce: GenericArray<GenericArray<u8, RN>, CN>,
+    debounce_count: u8,
+    state: GenericArray<GenericArray<u8, RN>, CN>,
 
     _cn: PhantomData<CN>,
     _cr: PhantomData<RN>,
@@ -43,6 +42,7 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
 {
     pub fn new<TU, CT, T>(counter: &mut CT,
                           freq: T,
+                          debounce_count: u8,
                           cols: C,
                           rows: R) -> KeyMatrix<CN, RN, C, R>
         where T: Into<TU>,
@@ -54,19 +54,15 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
         KeyMatrix {
             cols,
             rows,
-            debounce: KeyMatrix::<CN, RN, C, R>::init_state(),
+            debounce_count,
+            state: KeyMatrix::<CN, RN, C, R>::init_state(),
             _cn: PhantomData,
             _cr: PhantomData,
-            //counter
         }
     }
 
     fn init_state() -> GenericArray<GenericArray<u8, RN>, CN> {
-        return GenericArray::generate(|_i| GenericArray::generate(|_j| Default::default()));
-    }
-
-    fn init_output_state() -> GenericArray<GenericArray<bool, RN>, CN> {
-        return GenericArray::generate(|_i| GenericArray::generate(|_j| Default::default()));
+        return GenericArray::generate(|_i| GenericArray::generate(|_j| 0u8));
     }
 
     pub fn poll(&mut self) {
@@ -76,12 +72,12 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
             for j in 0..<RN as Unsigned>::to_usize() {
                 match self.rows.read_row(j) {
                     true => {
-                        let cur: u8 = self.debounce[i][j];
+                        let cur: u8 = self.state[i][j];
                         // Saturating add to prevent overflow
-                        self.debounce[i][j] = cur.saturating_add(1);
+                        self.state[i][j] = cur.saturating_add(1);
                     }
                     false => {
-                        self.debounce[i][j] = 0;
+                        self.state[i][j] = 0;
                     }
                 }
             }
@@ -91,7 +87,12 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
     }
 
     pub fn current_state(&self) -> GenericArray<GenericArray<bool, RN>, CN> {
-        self.debounce.clone().map(|col| col.map(|elem| elem > 5))
+        self.state.clone()
+            .map(|col| {
+                col.map(|elem| {
+                    elem > self.debounce_count
+                })
+            })
     }
 
     pub fn row_size(&self) -> usize {
