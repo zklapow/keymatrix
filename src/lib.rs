@@ -42,9 +42,9 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
                                                  R: KeyRows<RN>,
 {
     pub fn new<TU, CT, T>(counter: &mut CT,
-                      freq: T,
-                      cols: C,
-                      rows: R) -> KeyMatrix<CN, RN, C, R>
+                          freq: T,
+                          cols: C,
+                          rows: R) -> KeyMatrix<CN, RN, C, R>
         where T: Into<TU>,
               CT: CountDown<Time=TU> + Periodic,
               C: KeyColumns<CN>,
@@ -79,7 +79,7 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
                         let cur: u8 = self.debounce[i][j];
                         // Saturating add to prevent overflow
                         self.debounce[i][j] = cur.saturating_add(1);
-                    },
+                    }
                     false => {
                         self.debounce[i][j] = 0;
                     }
