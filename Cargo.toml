@@ -2,6 +2,10 @@
 name = "keymatrix"
 version = "0.1.0"
 authors = ["Ze'ev Klapow <zklapow@gmail.com>"]
+description = "Generate generic key matrix drivers for use with embedded-hal"
+keywords = ["no-std", "arm", "cortex-m"]
+repository = "https://github.com/zklapow/keymatrix"
+license = "MIT"
 
 [dependencies]
 cortex-m = "~0.5"
