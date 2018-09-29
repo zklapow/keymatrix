@@ -11,3 +11,21 @@ license = "MIT"
 cortex-m = "~0.5"
 generic-array = "~0.11"
 embedded-hal = "~0.2"
+
+[dev-dependencies]
+cortex-m = "~0.5"
+embedded-hal = "~0.2"
+nb = "~0.1"
+cortex-m-rt = "~0.6"
+cortex-m-rtfm = "~0.3"
+atsamd21-hal = "~0.2"
+samd21g18a = "~0.2"
+samd21_mini = "~0.1"
+panic-abort = "~0.2"
+
+[[print_matrix]]
+name = "print_matrix"
+required-features = ["samd21"]
+
+[features]
+samd21 = ["atsamd21-hal/samd21g18a-rt", "samd21_mini/rt", "samd21_mini/unproven"]
