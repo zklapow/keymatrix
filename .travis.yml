@@ -5,3 +5,4 @@ cache: cargo
 script:
   - rustup target add thumbv6m-none-eabi
   - cargo build
+  - cargo build --target thumbv6m-none-eabi --features samd21 --example print_matrix
