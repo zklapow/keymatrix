@@ -1,6 +1,6 @@
 [package]
 name = "keymatrix"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Ze'ev Klapow <zklapow@gmail.com>"]
 description = "Generate generic key matrix drivers for use with embedded-hal"
 keywords = ["no-std", "arm", "cortex-m", "embedded-hal-driver"]
