@@ -10,13 +10,13 @@ use generic_array::typenum::Unsigned;
 
 pub trait KeyColumns<N: Unsigned> {
     fn size(&self) -> N;
-    fn enable_column(&mut self, col: usize);
-    fn disable_column(&mut self, col: usize);
+    fn enable_column(&mut self, col: usize) -> Result<(), ()>;
+    fn disable_column(&mut self, col: usize) -> Result<(), ()>;
 }
 
 pub trait KeyRows<N: Unsigned> {
     fn size(&self) -> N;
-    fn read_row(&mut self, col: usize) -> bool;
+    fn read_row(&mut self, col: usize) -> Result<bool, ()>;
 }
 
 pub struct KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool> + ArrayLength<u8>,
@@ -52,12 +52,12 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
         return GenericArray::generate(|_i| GenericArray::generate(|_j| 0u8));
     }
 
-    pub fn poll(&mut self) {
+    pub fn poll(&mut self) -> Result<(), ()> {
         for i in 0..<CN as Unsigned>::to_usize() {
-            self.cols.enable_column(i);
+            self.cols.enable_column(i)?;
 
             for j in 0..<RN as Unsigned>::to_usize() {
-                match self.rows.read_row(j) {
+                match self.rows.read_row(j)? {
                     true => {
                         let cur: u8 = self.state[i][j];
                         // Saturating add to prevent overflow
@@ -69,8 +69,9 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
                 }
             }
 
-            self.cols.disable_column(i);
+            self.cols.disable_column(i)?;
         }
+        Ok(())
     }
 
     pub fn current_state(&self) -> GenericArray<GenericArray<bool, RN>, CN> {
@@ -126,22 +127,22 @@ impl KeyColumns<$size_type> for $Type {
         <$size_type>::new()
     }
 
-    fn enable_column(&mut self, col: usize) {
+    fn enable_column(&mut self, col: usize) -> Result<(), ()> {
         match col {
             $(
-            $index => self.$col_name.set_high(),
+            $index => self.$col_name.set_high().map_err(drop),
             )+
             _ => unreachable!()
-        };
+        }
     }
 
-    fn disable_column(&mut self, col: usize) {
+    fn disable_column(&mut self, col: usize) -> Result<(), ()> {
         match col {
             $(
-            $index => self.$col_name.set_low(),
+            $index => self.$col_name.set_low().map_err(drop),
             )+
             _ => unreachable!()
-        };
+        }
     }
 }
 
@@ -184,10 +185,10 @@ impl KeyRows<$size_type> for $Type {
         <$size_type>::new()
     }
 
-    fn read_row(&mut self, row: usize) -> bool {
+    fn read_row(&mut self, row: usize) -> Result<bool, ()> {
         match row {
             $(
-            $index => self.$row_name.is_high(),
+            $index => self.$row_name.is_high().map_err(drop),
             )+
             _ => unreachable!()
         }
