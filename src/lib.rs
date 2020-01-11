@@ -1,7 +1,5 @@
 #![no_std]
 
-extern crate cortex_m;
-extern crate embedded_hal as hal;
 extern crate generic_array;
 
 use core::marker::PhantomData;
@@ -9,17 +7,16 @@ use generic_array::{ArrayLength, GenericArray};
 use generic_array::sequence::GenericSequence;
 use generic_array::functional::FunctionalSequence;
 use generic_array::typenum::Unsigned;
-use hal::timer::{CountDown, Periodic};
 
 pub trait KeyColumns<N: Unsigned> {
     fn size(&self) -> N;
-    fn enable_column(&mut self, col: usize);
-    fn disable_column(&mut self, col: usize);
+    fn enable_column(&mut self, col: usize) -> Result<(), ()>;
+    fn disable_column(&mut self, col: usize) -> Result<(), ()>;
 }
 
 pub trait KeyRows<N: Unsigned> {
     fn size(&self) -> N;
-    fn read_row(&mut self, col: usize) -> bool;
+    fn read_row(&mut self, col: usize) -> Result<bool, ()>;
 }
 
 pub struct KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool> + ArrayLength<u8>,
@@ -40,22 +37,17 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
                                                  C: KeyColumns<CN>,
                                                  R: KeyRows<RN>,
 {
-    pub fn new<TU, CT, T>(counter: &mut CT,
-                          freq: T,
-                          debounce_count: u8,
-                          cols: C,
-                          rows: R) -> KeyMatrix<CN, RN, C, R>
-        where T: Into<TU>,
-              CT: CountDown<Time=TU> + Periodic,
-              C: KeyColumns<CN>,
-              R: KeyRows<RN>,
-    {
-        counter.start(freq.into());
+    /// Create a new key matrix with the given column and row structs.
+    ///
+    /// The debounce parameter specifies in how many subsequent calls of
+    /// `poll()` a key has to be registered as pressed, in order to be
+    /// considered pressed by `current_state()`.
+    pub fn new(debounce_count: u8, cols: C, rows: R) -> Self {
         KeyMatrix {
             cols,
             rows,
             debounce_count,
-            state: KeyMatrix::<CN, RN, C, R>::init_state(),
+            state: Self::init_state(),
             _cn: PhantomData,
             _cr: PhantomData,
         }
@@ -65,12 +57,17 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
         return GenericArray::generate(|_i| GenericArray::generate(|_j| 0u8));
     }
 
-    pub fn poll(&mut self) {
+    /// Scan the key matrix once.
+    ///
+    /// If the matrix was created with a `debounce_count > 0`, this must be
+    /// called at least that number of times + 1 to actually show a key as
+    /// pressed.
+    pub fn poll(&mut self) -> Result<(), ()> {
         for i in 0..<CN as Unsigned>::to_usize() {
-            self.cols.enable_column(i);
+            self.cols.enable_column(i)?;
 
             for j in 0..<RN as Unsigned>::to_usize() {
-                match self.rows.read_row(j) {
+                match self.rows.read_row(j)? {
                     true => {
                         let cur: u8 = self.state[i][j];
                         // Saturating add to prevent overflow
@@ -82,10 +79,12 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
                 }
             }
 
-            self.cols.disable_column(i);
+            self.cols.disable_column(i)?;
         }
+        Ok(())
     }
 
+    /// Return a 2-dimensional array of the last polled state of the matrix.
     pub fn current_state(&self) -> GenericArray<GenericArray<bool, RN>, CN> {
         self.state.clone()
             .map(|col| {
@@ -95,10 +94,12 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
             })
     }
 
+    /// Return the number of rows that the matrix was created with.
     pub fn row_size(&self) -> usize {
         <RN as Unsigned>::to_usize()
     }
 
+    /// Return the number of columns that the matrix was created with.
     pub fn col_size(&self) -> usize {
         <CN as Unsigned>::to_usize()
     }
@@ -139,22 +140,22 @@ impl KeyColumns<$size_type> for $Type {
         <$size_type>::new()
     }
 
-    fn enable_column(&mut self, col: usize) {
+    fn enable_column(&mut self, col: usize) -> Result<(), ()> {
         match col {
             $(
-            $index => self.$col_name.set_high(),
+            $index => self.$col_name.set_high().map_err(drop),
             )+
             _ => unreachable!()
-        };
+        }
     }
 
-    fn disable_column(&mut self, col: usize) {
+    fn disable_column(&mut self, col: usize) -> Result<(), ()> {
         match col {
             $(
-            $index => self.$col_name.set_low(),
+            $index => self.$col_name.set_low().map_err(drop),
             )+
             _ => unreachable!()
-        };
+        }
     }
 }
 
@@ -197,10 +198,10 @@ impl KeyRows<$size_type> for $Type {
         <$size_type>::new()
     }
 
-    fn read_row(&mut self, row: usize) -> bool {
+    fn read_row(&mut self, row: usize) -> Result<bool, ()> {
         match row {
             $(
-            $index => self.$row_name.is_high(),
+            $index => self.$row_name.is_high().map_err(drop),
             )+
             _ => unreachable!()
         }
