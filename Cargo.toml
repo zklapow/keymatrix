@@ -8,9 +8,7 @@ repository = "https://github.com/zklapow/keymatrix"
 license = "MIT"
 
 [dependencies]
-cortex-m = "~0.5"
-generic-array = "~0.11"
-embedded-hal = "~0.2"
+generic-array = "~0.13"
 
 [dev-dependencies]
 cortex-m = "~0.5"
@@ -23,7 +21,7 @@ samd21g18a = "~0.2"
 samd21_mini = "~0.1"
 panic-abort = "~0.2"
 
-[[print_matrix]]
+[[example]]
 name = "print_matrix"
 required-features = ["samd21"]
 

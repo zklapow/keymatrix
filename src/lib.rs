@@ -1,7 +1,5 @@
 #![no_std]
 
-extern crate cortex_m;
-extern crate embedded_hal as hal;
 extern crate generic_array;
 
 use core::marker::PhantomData;
@@ -9,7 +7,6 @@ use generic_array::{ArrayLength, GenericArray};
 use generic_array::sequence::GenericSequence;
 use generic_array::functional::FunctionalSequence;
 use generic_array::typenum::Unsigned;
-use hal::timer::{CountDown, Periodic};
 
 pub trait KeyColumns<N: Unsigned> {
     fn size(&self) -> N;
@@ -40,22 +37,12 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
                                                  C: KeyColumns<CN>,
                                                  R: KeyRows<RN>,
 {
-    pub fn new<TU, CT, T>(counter: &mut CT,
-                          freq: T,
-                          debounce_count: u8,
-                          cols: C,
-                          rows: R) -> KeyMatrix<CN, RN, C, R>
-        where T: Into<TU>,
-              CT: CountDown<Time=TU> + Periodic,
-              C: KeyColumns<CN>,
-              R: KeyRows<RN>,
-    {
-        counter.start(freq.into());
+    pub fn new(debounce_count: u8, cols: C, rows: R) -> Self {
         KeyMatrix {
             cols,
             rows,
             debounce_count,
-            state: KeyMatrix::<CN, RN, C, R>::init_state(),
+            state: Self::init_state(),
             _cn: PhantomData,
             _cr: PhantomData,
         }
