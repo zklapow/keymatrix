@@ -37,6 +37,11 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
                                                  C: KeyColumns<CN>,
                                                  R: KeyRows<RN>,
 {
+    /// Create a new key matrix with the given column and row structs.
+    ///
+    /// The debounce parameter specifies in how many subsequent calls of
+    /// `poll()` a key has to be registered as pressed, in order to be
+    /// considered pressed by `current_state()`.
     pub fn new(debounce_count: u8, cols: C, rows: R) -> Self {
         KeyMatrix {
             cols,
@@ -52,6 +57,11 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
         return GenericArray::generate(|_i| GenericArray::generate(|_j| 0u8));
     }
 
+    /// Scan the key matrix once.
+    ///
+    /// If the matrix was created with a `debounce_count > 0`, this must be
+    /// called at least that number of times + 1 to actually show a key as
+    /// pressed.
     pub fn poll(&mut self) -> Result<(), ()> {
         for i in 0..<CN as Unsigned>::to_usize() {
             self.cols.enable_column(i)?;
@@ -74,6 +84,7 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
         Ok(())
     }
 
+    /// Return a 2-dimensional array of the last polled state of the matrix.
     pub fn current_state(&self) -> GenericArray<GenericArray<bool, RN>, CN> {
         self.state.clone()
             .map(|col| {
@@ -83,10 +94,12 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
             })
     }
 
+    /// Return the number of rows that the matrix was created with.
     pub fn row_size(&self) -> usize {
         <RN as Unsigned>::to_usize()
     }
 
+    /// Return the number of columns that the matrix was created with.
     pub fn col_size(&self) -> usize {
         <CN as Unsigned>::to_usize()
     }
