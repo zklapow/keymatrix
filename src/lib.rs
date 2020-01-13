@@ -1,42 +1,44 @@
 #![no_std]
+#![feature(const_generics, maybe_uninit_extra)]
 
-extern crate generic_array;
+use core::mem::MaybeUninit;
 
-use core::marker::PhantomData;
-use generic_array::{ArrayLength, GenericArray};
-use generic_array::sequence::GenericSequence;
-use generic_array::functional::FunctionalSequence;
-use generic_array::typenum::Unsigned;
-
-pub trait KeyColumns<N: Unsigned> {
-    fn size(&self) -> N;
+pub trait KeyColumns<const N: usize> {
+    fn size(&self) -> usize;
     fn enable_column(&mut self, col: usize) -> Result<(), ()>;
     fn disable_column(&mut self, col: usize) -> Result<(), ()>;
 }
 
-pub trait KeyRows<N: Unsigned> {
-    fn size(&self) -> N;
+pub trait KeyRows<const N: usize> {
+    fn size(&self) -> usize;
     fn read_row(&mut self, col: usize) -> Result<bool, ()>;
 }
 
-pub struct KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool> + ArrayLength<u8>,
-                                         CN: Unsigned + ArrayLength<GenericArray<bool, RN>> + ArrayLength<GenericArray<u8, RN>>,
-                                         C: KeyColumns<CN>,
-                                         R: KeyRows<RN> {
+pub struct KeyMatrix<C, R, const CN: usize, const RN: usize>
+where C: KeyColumns<CN>, R: KeyRows<RN> {
     cols: C,
     rows: R,
     debounce_count: u8,
-    state: GenericArray<GenericArray<u8, RN>, CN>,
-
-    _cn: PhantomData<CN>,
-    _cr: PhantomData<RN>,
+    state: [[u8; RN]; CN],
 }
 
-impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool> + ArrayLength<u8>,
-                                                 CN: Unsigned + ArrayLength<GenericArray<bool, RN>> + ArrayLength<GenericArray<u8, RN>>,
-                                                 C: KeyColumns<CN>,
-                                                 R: KeyRows<RN>,
-{
+// needed since we currently can't use CN/RN in expressions like [[0; RN]; CN]
+fn default_arr<T: Default, const CN: usize, const RN: usize>() -> [[T; RN]; CN] {
+    unsafe {
+        let mut data: [[MaybeUninit<T>; RN]; CN] = MaybeUninit::uninit().assume_init();
+
+        for row in data.iter_mut() {
+            for el in row.iter_mut() {
+                el.write(T::default());
+            }
+        }
+
+        (&data as *const _ as *const [[T; RN]; CN]).read()
+    }
+}
+
+impl<C, R, const CN: usize, const RN: usize> KeyMatrix<C, R, CN, RN>
+where C: KeyColumns<CN>, R: KeyRows<RN> {
     /// Create a new key matrix with the given column and row structs.
     ///
     /// The debounce parameter specifies in how many subsequent calls of
@@ -48,13 +50,11 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
             rows,
             debounce_count,
             state: Self::init_state(),
-            _cn: PhantomData,
-            _cr: PhantomData,
         }
     }
 
-    fn init_state() -> GenericArray<GenericArray<u8, RN>, CN> {
-        return GenericArray::generate(|_i| GenericArray::generate(|_j| 0u8));
+    fn init_state() -> [[u8; RN]; CN] {
+        default_arr()
     }
 
     /// Scan the key matrix once.
@@ -63,10 +63,10 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
     /// called at least that number of times + 1 to actually show a key as
     /// pressed.
     pub fn poll(&mut self) -> Result<(), ()> {
-        for i in 0..<CN as Unsigned>::to_usize() {
+        for i in 0..CN {
             self.cols.enable_column(i)?;
 
-            for j in 0..<RN as Unsigned>::to_usize() {
+            for j in 0..RN {
                 match self.rows.read_row(j)? {
                     true => {
                         let cur: u8 = self.state[i][j];
@@ -85,23 +85,26 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
     }
 
     /// Return a 2-dimensional array of the last polled state of the matrix.
-    pub fn current_state(&self) -> GenericArray<GenericArray<bool, RN>, CN> {
-        self.state.clone()
-            .map(|col| {
-                col.map(|elem| {
-                    elem > self.debounce_count
-                })
-            })
+    pub fn current_state(&self) -> [[bool; RN]; CN] {
+        let mut state = default_arr::<bool, CN, RN>();
+        for (i, row) in self.state.iter().enumerate() {
+            for (j, &elem) in row.iter().enumerate() {
+                if elem > self.debounce_count {
+                    state[i][j] = true;
+                }
+            }
+        }
+        state
     }
 
     /// Return the number of rows that the matrix was created with.
     pub fn row_size(&self) -> usize {
-        <RN as Unsigned>::to_usize()
+        RN
     }
 
     /// Return the number of columns that the matrix was created with.
     pub fn col_size(&self) -> usize {
-        <CN as Unsigned>::to_usize()
+        CN
     }
 }
 
@@ -109,7 +112,7 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
 macro_rules! key_columns {
     (
         $Type:ident,
-        $size_type:ty,
+        $size:literal,
         [$(
             $col_name:ident : ($index:expr , $pintype:ty)
         ),+]) => {
@@ -135,9 +138,9 @@ impl $Type {
     }
 }
 
-impl KeyColumns<$size_type> for $Type {
-    fn size(&self) -> $size_type {
-        <$size_type>::new()
+impl KeyColumns<$size> for $Type {
+    fn size(&self) -> usize {
+        $size
     }
 
     fn enable_column(&mut self, col: usize) -> Result<(), ()> {
@@ -167,7 +170,7 @@ impl KeyColumns<$size_type> for $Type {
 macro_rules! key_rows {
     (
         $Type:ident,
-        $size_type:ty,
+        $size:literal,
         [$(
             $row_name:ident : ($index:expr , $pintype:ty)
         ),+]) => {
@@ -193,9 +196,9 @@ impl $Type {
     }
 }
 
-impl KeyRows<$size_type> for $Type {
-    fn size(&self) -> $size_type {
-        <$size_type>::new()
+impl KeyRows<$size> for $Type {
+    fn size(&self) -> usize {
+        $size
     }
 
     fn read_row(&mut self, row: usize) -> Result<bool, ()> {
