@@ -146,7 +146,7 @@ impl KeyColumns<$size> for $Type {
     fn enable_column(&mut self, col: usize) -> Result<(), ()> {
         match col {
             $(
-            $index => self.$col_name.set_high().map_err(drop),
+            $index => self.$col_name.set_low().map_err(drop),
             )+
             _ => unreachable!()
         }
@@ -155,7 +155,7 @@ impl KeyColumns<$size> for $Type {
     fn disable_column(&mut self, col: usize) -> Result<(), ()> {
         match col {
             $(
-            $index => self.$col_name.set_low().map_err(drop),
+            $index => self.$col_name.set_high().map_err(drop),
             )+
             _ => unreachable!()
         }
@@ -204,7 +204,7 @@ impl KeyRows<$size> for $Type {
     fn read_row(&mut self, row: usize) -> Result<bool, ()> {
         match row {
             $(
-            $index => self.$row_name.is_high().map_err(drop),
+            $index => self.$row_name.is_low().map_err(drop),
             )+
             _ => unreachable!()
         }
