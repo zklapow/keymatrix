@@ -6,11 +6,9 @@ description = "Generate generic key matrix drivers for use with embedded-hal"
 keywords = ["no-std", "arm", "cortex-m", "embedded-hal-driver"]
 repository = "https://github.com/zklapow/keymatrix"
 license = "MIT"
+edition = "2018"
 
 [dependencies]
-cortex-m = "~0.5"
-generic-array = "~0.11"
-embedded-hal = "~0.2"
 
 [dev-dependencies]
 cortex-m = "~0.5"
@@ -23,7 +21,7 @@ samd21g18a = "~0.2"
 samd21_mini = "~0.1"
 panic-abort = "~0.2"
 
-[[print_matrix]]
+[[example]]
 name = "print_matrix"
 required-features = ["samd21"]
 
