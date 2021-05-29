@@ -1,7 +1,4 @@
 #![no_std]
-#![feature(const_generics, maybe_uninit_extra)]
-
-use core::mem::MaybeUninit;
 
 pub trait KeyColumns<const N: usize> {
     fn size(&self) -> usize;
@@ -22,21 +19,6 @@ where C: KeyColumns<CN>, R: KeyRows<RN> {
     state: [[u8; RN]; CN],
 }
 
-// needed since we currently can't use CN/RN in expressions like [[0; RN]; CN]
-fn default_arr<T: Default, const CN: usize, const RN: usize>() -> [[T; RN]; CN] {
-    unsafe {
-        let mut data: [[MaybeUninit<T>; RN]; CN] = MaybeUninit::uninit().assume_init();
-
-        for row in data.iter_mut() {
-            for el in row.iter_mut() {
-                el.write(T::default());
-            }
-        }
-
-        (&data as *const _ as *const [[T; RN]; CN]).read()
-    }
-}
-
 impl<C, R, const CN: usize, const RN: usize> KeyMatrix<C, R, CN, RN>
 where C: KeyColumns<CN>, R: KeyRows<RN> {
     /// Create a new key matrix with the given column and row structs.
@@ -54,7 +36,7 @@ where C: KeyColumns<CN>, R: KeyRows<RN> {
     }
 
     fn init_state() -> [[u8; RN]; CN] {
-        default_arr()
+        [[0; RN]; CN]
     }
 
     /// Scan the key matrix once.
@@ -86,7 +68,7 @@ where C: KeyColumns<CN>, R: KeyRows<RN> {
 
     /// Return a 2-dimensional array of the last polled state of the matrix.
     pub fn current_state(&self) -> [[bool; RN]; CN] {
-        let mut state = default_arr::<bool, CN, RN>();
+        let mut state = [[false; RN]; CN];// default_arr::<bool, CN, RN>();
         for (i, row) in self.state.iter().enumerate() {
             for (j, &elem) in row.iter().enumerate() {
                 if elem > self.debounce_count {
