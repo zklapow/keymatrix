@@ -68,7 +68,7 @@ where C: KeyColumns<CN>, R: KeyRows<RN> {
 
     /// Return a 2-dimensional array of the last polled state of the matrix.
     pub fn current_state(&self) -> [[bool; RN]; CN] {
-        let mut state = [[false; RN]; CN];// default_arr::<bool, CN, RN>();
+        let mut state = [[false; RN]; CN];
         for (i, row) in self.state.iter().enumerate() {
             for (j, &elem) in row.iter().enumerate() {
                 if elem > self.debounce_count {
@@ -126,18 +126,20 @@ impl KeyColumns<$size> for $Type {
     }
 
     fn enable_column(&mut self, col: usize) -> Result<(), ()> {
+        use embedded_hal::digital::v2::OutputPin;
         match col {
             $(
-            $index => self.$col_name.set_low().map_err(drop),
+            $index => OutputPin::set_low(&mut self.$col_name).map_err(drop),
             )+
             _ => unreachable!()
         }
     }
 
     fn disable_column(&mut self, col: usize) -> Result<(), ()> {
+        use embedded_hal::digital::v2::OutputPin;
         match col {
             $(
-            $index => self.$col_name.set_high().map_err(drop),
+            $index => OutputPin::set_high(&mut self.$col_name).map_err(drop),
             )+
             _ => unreachable!()
         }
@@ -184,9 +186,10 @@ impl KeyRows<$size> for $Type {
     }
 
     fn read_row(&mut self, row: usize) -> Result<bool, ()> {
+        use embedded_hal::digital::v2::InputPin;
         match row {
             $(
-            $index => self.$row_name.is_low().map_err(drop),
+            $index => InputPin::is_low(&self.$row_name).map_err(drop),
             )+
             _ => unreachable!()
         }
