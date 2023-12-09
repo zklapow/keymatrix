@@ -1,76 +1,55 @@
 #![no_std]
 
-extern crate cortex_m;
-extern crate embedded_hal as hal;
-extern crate generic_array;
-
-use core::marker::PhantomData;
-use generic_array::{ArrayLength, GenericArray};
-use generic_array::sequence::GenericSequence;
-use generic_array::functional::FunctionalSequence;
-use generic_array::typenum::Unsigned;
-use hal::timer::{CountDown, Periodic};
-
-pub trait KeyColumns<N: Unsigned> {
-    fn size(&self) -> N;
-    fn enable_column(&mut self, col: usize);
-    fn disable_column(&mut self, col: usize);
+pub trait KeyColumns<const N: usize> {
+    fn size(&self) -> usize;
+    fn enable_column(&mut self, col: usize) -> Result<(), ()>;
+    fn disable_column(&mut self, col: usize) -> Result<(), ()>;
 }
 
-pub trait KeyRows<N: Unsigned> {
-    fn size(&self) -> N;
-    fn read_row(&mut self, col: usize) -> bool;
+pub trait KeyRows<const N: usize> {
+    fn size(&self) -> usize;
+    fn read_row(&mut self, col: usize) -> Result<bool, ()>;
 }
 
-pub struct KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool> + ArrayLength<u8>,
-                                         CN: Unsigned + ArrayLength<GenericArray<bool, RN>> + ArrayLength<GenericArray<u8, RN>>,
-                                         C: KeyColumns<CN>,
-                                         R: KeyRows<RN> {
+pub struct KeyMatrix<C, R, const CN: usize, const RN: usize>
+where C: KeyColumns<CN>, R: KeyRows<RN> {
     cols: C,
     rows: R,
     debounce_count: u8,
-    state: GenericArray<GenericArray<u8, RN>, CN>,
-
-    _cn: PhantomData<CN>,
-    _cr: PhantomData<RN>,
+    state: [[u8; RN]; CN],
 }
 
-impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool> + ArrayLength<u8>,
-                                                 CN: Unsigned + ArrayLength<GenericArray<bool, RN>> + ArrayLength<GenericArray<u8, RN>>,
-                                                 C: KeyColumns<CN>,
-                                                 R: KeyRows<RN>,
-{
-    pub fn new<TU, CT, T>(counter: &mut CT,
-                          freq: T,
-                          debounce_count: u8,
-                          cols: C,
-                          rows: R) -> KeyMatrix<CN, RN, C, R>
-        where T: Into<TU>,
-              CT: CountDown<Time=TU> + Periodic,
-              C: KeyColumns<CN>,
-              R: KeyRows<RN>,
-    {
-        counter.start(freq.into());
+impl<C, R, const CN: usize, const RN: usize> KeyMatrix<C, R, CN, RN>
+where C: KeyColumns<CN>, R: KeyRows<RN> {
+    /// Create a new key matrix with the given column and row structs.
+    ///
+    /// The debounce parameter specifies in how many subsequent calls of
+    /// `poll()` a key has to be registered as pressed, in order to be
+    /// considered pressed by `current_state()`.
+    pub fn new(debounce_count: u8, cols: C, rows: R) -> Self {
         KeyMatrix {
             cols,
             rows,
             debounce_count,
-            state: KeyMatrix::<CN, RN, C, R>::init_state(),
-            _cn: PhantomData,
-            _cr: PhantomData,
+            state: Self::init_state(),
         }
     }
 
-    fn init_state() -> GenericArray<GenericArray<u8, RN>, CN> {
-        return GenericArray::generate(|_i| GenericArray::generate(|_j| 0u8));
+    fn init_state() -> [[u8; RN]; CN] {
+        [[0; RN]; CN]
     }
 
-    pub fn poll(&mut self) {
-        for i in 0..<CN as Unsigned>::to_usize() {
-            self.cols.enable_column(i);
+    /// Scan the key matrix once.
+    ///
+    /// If the matrix was created with a `debounce_count > 0`, this must be
+    /// called at least that number of times + 1 to actually show a key as
+    /// pressed.
+    pub fn poll(&mut self) -> Result<(), ()> {
+        for i in 0..CN {
+            self.cols.enable_column(i)?;
 
-            for j in 0..<RN as Unsigned>::to_usize() {
-                match self.rows.read_row(j) {
+            for j in 0..RN {
+                match self.rows.read_row(j)? {
                     true => {
                         let cur: u8 = self.state[i][j];
                         // Saturating add to prevent overflow
@@ -82,25 +61,32 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
                 }
             }
 
-            self.cols.disable_column(i);
+            self.cols.disable_column(i)?;
         }
+        Ok(())
     }
 
-    pub fn current_state(&self) -> GenericArray<GenericArray<bool, RN>, CN> {
-        self.state.clone()
-            .map(|col| {
-                col.map(|elem| {
-                    elem > self.debounce_count
-                })
-            })
+    /// Return a 2-dimensional array of the last polled state of the matrix.
+    pub fn current_state(&self) -> [[bool; RN]; CN] {
+        let mut state = [[false; RN]; CN];
+        for (i, row) in self.state.iter().enumerate() {
+            for (j, &elem) in row.iter().enumerate() {
+                if elem > self.debounce_count {
+                    state[i][j] = true;
+                }
+            }
+        }
+        state
     }
 
+    /// Return the number of rows that the matrix was created with.
     pub fn row_size(&self) -> usize {
-        <RN as Unsigned>::to_usize()
+        RN
     }
 
+    /// Return the number of columns that the matrix was created with.
     pub fn col_size(&self) -> usize {
-        <CN as Unsigned>::to_usize()
+        CN
     }
 }
 
@@ -108,7 +94,7 @@ impl<CN, RN, C, R> KeyMatrix<CN, RN, C, R> where RN: Unsigned + ArrayLength<bool
 macro_rules! key_columns {
     (
         $Type:ident,
-        $size_type:ty,
+        $size:literal,
         [$(
             $col_name:ident : ($index:expr , $pintype:ty)
         ),+]) => {
@@ -134,27 +120,29 @@ impl $Type {
     }
 }
 
-impl KeyColumns<$size_type> for $Type {
-    fn size(&self) -> $size_type {
-        <$size_type>::new()
+impl KeyColumns<$size> for $Type {
+    fn size(&self) -> usize {
+        $size
     }
 
-    fn enable_column(&mut self, col: usize) {
+    fn enable_column(&mut self, col: usize) -> Result<(), ()> {
+        use embedded_hal::digital::OutputPin;
         match col {
             $(
-            $index => self.$col_name.set_high(),
+            $index => OutputPin::set_low(&mut self.$col_name).map_err(drop),
             )+
             _ => unreachable!()
-        };
+        }
     }
 
-    fn disable_column(&mut self, col: usize) {
+    fn disable_column(&mut self, col: usize) -> Result<(), ()> {
+        use embedded_hal::digital::OutputPin;
         match col {
             $(
-            $index => self.$col_name.set_low(),
+            $index => OutputPin::set_high(&mut self.$col_name).map_err(drop),
             )+
             _ => unreachable!()
-        };
+        }
     }
 }
 
@@ -166,7 +154,7 @@ impl KeyColumns<$size_type> for $Type {
 macro_rules! key_rows {
     (
         $Type:ident,
-        $size_type:ty,
+        $size:literal,
         [$(
             $row_name:ident : ($index:expr , $pintype:ty)
         ),+]) => {
@@ -192,15 +180,16 @@ impl $Type {
     }
 }
 
-impl KeyRows<$size_type> for $Type {
-    fn size(&self) -> $size_type {
-        <$size_type>::new()
+impl KeyRows<$size> for $Type {
+    fn size(&self) -> usize {
+        $size
     }
 
-    fn read_row(&mut self, row: usize) -> bool {
+    fn read_row(&mut self, row: usize) -> Result<bool, ()> {
+        use embedded_hal::digital::InputPin;
         match row {
             $(
-            $index => self.$row_name.is_high(),
+            $index => InputPin::is_low(&self.$row_name).map_err(drop),
             )+
             _ => unreachable!()
         }
