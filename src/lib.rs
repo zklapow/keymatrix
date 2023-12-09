@@ -126,7 +126,7 @@ impl KeyColumns<$size> for $Type {
     }
 
     fn enable_column(&mut self, col: usize) -> Result<(), ()> {
-        use embedded_hal::digital::blocking::OutputPin;
+        use embedded_hal::digital::OutputPin;
         match col {
             $(
             $index => OutputPin::set_low(&mut self.$col_name).map_err(drop),
@@ -136,7 +136,7 @@ impl KeyColumns<$size> for $Type {
     }
 
     fn disable_column(&mut self, col: usize) -> Result<(), ()> {
-        use embedded_hal::digital::blocking::OutputPin;
+        use embedded_hal::digital::OutputPin;
         match col {
             $(
             $index => OutputPin::set_high(&mut self.$col_name).map_err(drop),
@@ -186,7 +186,7 @@ impl KeyRows<$size> for $Type {
     }
 
     fn read_row(&mut self, row: usize) -> Result<bool, ()> {
-        use embedded_hal::digital::blocking::InputPin;
+        use embedded_hal::digital::InputPin;
         match row {
             $(
             $index => InputPin::is_low(&self.$row_name).map_err(drop),
